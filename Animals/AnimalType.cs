@@ -1,4 +1,4 @@
-namespace LivingSim.World
+namespace LivingSim.Core
 {
     /// <summary>
     /// The diet/behaviour type of an animal.

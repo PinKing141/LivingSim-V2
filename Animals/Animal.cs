@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 
 using LivingSim.Core; // Added for Season enum
-namespace LivingSim.World
+using LivingSim.World;
+using SpeciesEnum = LivingSim.World.Species;
+
+namespace LivingSim.Animals
 {
     public class Animal
     {
@@ -289,30 +292,12 @@ namespace LivingSim.World
             float amountToDrink = 2.0f * Size;
             float waterConsumed = 0;
 
-            if (cell.Water > 0)
+            var waterSource = cell.Water > 0 ? cell : FindAdjacentWater(grid);
+            if (waterSource != null)
             {
-                // Animals drink to reduce thirst. Larger animals drink more.
-                waterConsumed = cell.ConsumeWater(amountToDrink);
-            }
-            else
-            {
-                // Try drinking from adjacent cells (Shore logic)
-                for (int dx = -1; dx <= 1; dx++)
-                {
-                    for (int dy = -1; dy <= 1; dy++)
-                    {
-                        if (dx == 0 && dy == 0) continue;
-                        var neighbor = grid.GetCell(X + dx, Y + dy);
-                        if (neighbor != null && neighbor.Water > 0)
-                        {
-                            waterConsumed = neighbor.ConsumeWater(amountToDrink);
-                            goto WaterFound;
-                        }
-                    }
-                }
+                waterConsumed = waterSource.ConsumeWater(amountToDrink);
             }
 
-            WaterFound:
             Thirst -= waterConsumed;
             if (Thirst < 0) Thirst = 0;
 
@@ -433,45 +418,72 @@ namespace LivingSim.World
             TryMoveTo(newX, newY, grid, currentTick, moveSpeed);
         }
 
+        /// <summary>
+        /// The main decision-making method for an animal's movement each tick.
+        /// This method has been refactored from a monolithic block into a dispatcher that calls
+        /// prioritized sub-routines for clarity and maintainability.
+        /// </summary>
         public void Move(Grid grid, IReadOnlyList<Animal> allAnimals, long currentTick, bool isNight, Season currentSeason)
+        {
+            if (!ShouldBeActive(isNight, currentSeason, grid, currentTick))
+            {
+                return;
+            }
+
+            // 1. Identify all nearby animals (mates, predators, rivals)
+            var (localMates, nearbyPredators, rivalsOnHomeTurf) = IdentifyNearbyEntities(allAnimals, grid);
+
+            // 2. Handle high-priority "fight or flight" responses. If any of these trigger, the animal acts and the turn ends.
+            if (HandleFear(nearbyPredators, grid, currentTick)) return;
+            if (HandleInjury(grid, currentTick)) return;
+            if (HandleTerritorialAggression(allAnimals, grid, currentTick)) return;
+
+            // 3. If no immediate threats, perform complex goal-seeking behavior.
+            PerformGoalSeekingMove(grid, allAnimals, currentTick, localMates, rivalsOnHomeTurf);
+        }
+
+        #region AI Behavior Sub-methods
+
+        /// <summary>
+        /// Determines if the animal should be active based on hibernation, time of day, and random chance.
+        /// </summary>
+        private bool ShouldBeActive(bool isNight, Season currentSeason, Grid grid, long currentTick)
         {
             // --- Hibernation Check ---
             if (CanHibernate)
             {
-                if (currentSeason == Season.Winter)
-                {
-                    IsHibernating = true;
-                }
-                else if (IsHibernating && currentSeason != Season.Winter)
-                {
-                    IsHibernating = false; // Wake up in Spring
-                }
+                if (currentSeason == Season.Winter) IsHibernating = true;
+                else if (IsHibernating && currentSeason != Season.Winter) IsHibernating = false; // Wake up
             }
 
-            if (IsHibernating)
-            {
-                return; // Do nothing while hibernating
-            }
+            if (IsHibernating) return false;
 
             // --- Activity Check based on Day/Night Cycle ---
-            bool isActive = (IsNocturnal && isNight) || (!IsNocturnal && !isNight);
-            if (!isActive)
+            bool isActiveTime = (IsNocturnal && isNight) || (!IsNocturnal && !isNight);
+            if (!isActiveTime)
             {
-                // Inactive animals have a high chance of resting and doing nothing.
-                if (_random.NextDouble() < 0.8) // 80% chance to rest
-                {
-                    return;
-                }
-                // If they don't rest, they perform a slow, random move.
-                MoveRandomly(grid, currentTick, 1); // Inactive wandering is always at walking speed.
-                return;
+                if (_random.NextDouble() < 0.8) return false; // 80% chance to rest
+
+                // If not resting, perform a slow, random move.
+                MoveRandomly(grid, currentTick, 1);
+                return false; // Action was taken, so end turn.
             }
 
-            // --- 1. Identify all nearby animals (mates, predators) ---
+            return true; // Animal is active and should proceed with normal AI.
+        }
+
+        /// <summary>
+        /// Scans the surroundings for other animals and categorizes them.
+        /// </summary>
+        private (List<Animal> localMates, List<Animal> nearbyPredators, List<Animal> rivalsOnHomeTurf) IdentifyNearbyEntities(IReadOnlyList<Animal> allAnimals, Grid grid)
+        {
             var localMates = new List<Animal>();
             var nearbyPredators = new List<Animal>();
             var rivalsOnHomeTurf = new List<Animal>();
 
+            // PERF: This iterates all animals in the simulation for each animal's move.
+            // This is an O(N^2) operation and a major performance bottleneck.
+            // A spatial partitioning system (e.g., passing in a list of only nearby animals) would be much better.
             foreach (var other in allAnimals)
             {
                 if (other == this || !other.IsAlive) continue;
@@ -496,20 +508,29 @@ namespace LivingSim.World
                 else
                 {
                     var rivalCell = grid.GetCell(other.X, other.Y);
-                    if (rivalCell != null && rivalCell.TerritoryOwnerId == other.GroupId) rivalsOnHomeTurf.Add(other);
+                    if (rivalCell != null && rivalCell.TerritoryOwnerId == other.GroupId)
+                    {
+                        rivalsOnHomeTurf.Add(other);
+                    }
                 }
             }
+            return (localMates, nearbyPredators, rivalsOnHomeTurf);
+        }
 
-            // --- 2. Primary Behavior: Fear (run from predators) ---
-            if (nearbyPredators.Any())
+        /// <summary>
+        /// Handles the highest priority behavior: fleeing from predators.
+        /// </summary>
+        /// <returns>True if the animal fled, false otherwise.</returns>
+        private bool HandleFear(IReadOnlyList<Animal> nearbyPredators, Grid grid, long currentTick)
+        {
+            if (!nearbyPredators.Any()) return false;
+
+            var closestPredator = FindClosest(nearbyPredators);
+            if (closestPredator != null)
             {
-                // Find the single closest predator to flee from
-                var closestPredator = nearbyPredators.OrderBy(p => (X - p.X) * (X - p.X) + (Y - p.Y) * (Y - p.Y)).First();
-
                 // Update memory of the predator's location
                 _lastKnownPredatorLocation = (closestPredator.X, closestPredator.Y);
                 _lastPredatorSightingTick = currentTick;
-
                 // Vector pointing away from the predator
                 float fearDx = X - closestPredator.X;
                 float fearDy = Y - closestPredator.Y;
@@ -529,17 +550,25 @@ namespace LivingSim.World
                 int newX = Math.Clamp(X + (fleeMoveDx * fleeSpeed), 0, grid.Width - 1);
                 int newY = Math.Clamp(Y + (fleeMoveDy * fleeSpeed), 0, grid.Height - 1);
                 TryMoveTo(newX, newY, grid, currentTick, fleeSpeed);
-                return; // Fear overrides all other behaviors, so return early
+                return true; // Fear overrides all other behaviors
             }
+            return false;
+        }
 
-            // --- 3. Flee to Den when Injured ---
+        /// <summary>
+        /// Handles the high-priority behavior of returning to the den when injured.
+        /// </summary>
+        /// <returns>True if the animal moved towards its den, false otherwise.</returns>
+        private bool HandleInjury(Grid grid, long currentTick)
+        {
             const float injuredHealthThreshold = 0.4f; // 40% health
             if (this.Health < (this.MaxHealth * injuredHealthThreshold))
             {
-                // Injured animals prioritize returning to their den to recover.
                 float injuredHomingDx = DenX - X;
                 float injuredHomingDy = DenY - Y;
 
+                if (Math.Abs(injuredHomingDx) < 1 && Math.Abs(injuredHomingDy) < 1) return false; // Already at den
+                
                 int injuredHomingSpeed = (Stamina > 0) ? Speed : 1;
 
                 // This is a high-priority goal.
@@ -551,25 +580,30 @@ namespace LivingSim.World
                 int injuredNewX = Math.Clamp(X + (injuredMoveDx * injuredHomingSpeed), 0, grid.Width - 1);
                 int injuredNewY = Math.Clamp(Y + (injuredMoveDy * injuredHomingSpeed), 0, grid.Height - 1);
                 TryMoveTo(injuredNewX, injuredNewY, grid, currentTick, injuredHomingSpeed);
-                return; // Overrides other behaviors.
+                return true; // Overrides other behaviors.
             }
+            return false;
+        }
 
-            // --- 4. Territorial Aggression ---
+        /// <summary>
+        /// Handles aggressive behavior towards intruders within the animal's territory.
+        /// </summary>
+        /// <returns>True if the animal chased an intruder, false otherwise.</returns>
+        private bool HandleTerritorialAggression(IReadOnlyList<Animal> allAnimals, Grid grid, long currentTick)
+        {
             var currentCell = grid.GetCell(this.X, this.Y);
             // Only non-herbivores exhibit territorial aggression
             if (this.Type != AnimalType.Herbivore && currentCell != null && currentCell.TerritoryOwnerId.HasValue && currentCell.TerritoryOwnerId.Value == this.GroupId)
             {
                 // We are in our own territory. Look for intruders.
-                var closestIntruder = allAnimals
+                var intruders = allAnimals
                     .Where(a => a.IsAlive && a.GroupId != this.GroupId) // Different group
-                    .Select(a => new { Animal = a, DistSq = (X - a.X) * (X - a.X) + (Y - a.Y) * (Y - a.Y) })
-                    .Where(a => a.DistSq <= VisionRange * VisionRange) // Within vision
-                    .OrderBy(a => a.DistSq)
-                    .FirstOrDefault()?.Animal;
+                    .Where(a => (X - a.X) * (X - a.X) + (Y - a.Y) * (Y - a.Y) <= VisionRange * VisionRange); // Within vision
+
+                var closestIntruder = FindClosest(intruders);
 
                 if (closestIntruder != null)
                 {
-                    // Only chase if courageous enough.
                     if (_random.NextDouble() < this.Courage)
                     {
                         // Aggressively move towards the intruder.
@@ -587,12 +621,23 @@ namespace LivingSim.World
                         int aggressionNewX = Math.Clamp(X + (aggressionMoveDx * aggressionSpeed), 0, grid.Width - 1);
                         int aggressionNewY = Math.Clamp(Y + (aggressionMoveDy * aggressionSpeed), 0, grid.Height - 1);
                         TryMoveTo(aggressionNewX, aggressionNewY, grid, currentTick, aggressionSpeed);
-                        return; // Territorial aggression overrides other goal-seeking for this tick.
+                        return true; // Territorial aggression overrides other goal-seeking.
                     }
                 }
             }
+            return false;
+        }
 
-            // --- 5. Social and Goal-Seeking Behaviors ---
+        /// <summary>
+        /// The main logic for combining various environmental and social factors into a single movement decision.
+        /// This is called when no high-priority threats are present.
+        /// </summary>
+        private void PerformGoalSeekingMove(Grid grid, IReadOnlyList<Animal> allAnimals, long currentTick, List<Animal> localMates, List<Animal> rivalsOnHomeTurf)
+        {
+            // This method calculates a series of "steering vectors" based on the animal's current state and environment.
+            // Each vector is weighted and then combined to produce a final movement direction.
+
+            // --- Vector Initialization ---
             float cohesionDx = 0, cohesionDy = 0;
             float separationDx = 0, separationDy = 0;
             float lingeringFearDx = 0, lingeringFearDy = 0;
@@ -604,7 +649,7 @@ namespace LivingSim.World
             float biomeSeekingDx = 0, biomeSeekingDy = 0;
             float goalDx = 0, goalDy = 0;
 
-            // Calculate Cohesion and Separation vectors from local mates
+            // --- Social Vectors (Cohesion & Separation) ---
             if (localMates.Any())
             {
                 // Cohesion: steer towards center of local mates
@@ -627,7 +672,7 @@ namespace LivingSim.World
                 }
             }
 
-            // Calculate Lingering Fear vector (if not a carnivore and no immediate threat)
+            // --- Environmental/Memory Vectors ---
             if (Type != AnimalType.Carnivore && _lastKnownPredatorLocation.HasValue && currentTick - _lastPredatorSightingTick < MemoryDurationTicks)
             {
                 // Create a vector pointing away from the remembered predator location
@@ -636,7 +681,6 @@ namespace LivingSim.World
                 lingeringFearDy = Y - predY;
             }
 
-            // Calculate Territorial Aversion vector (steer away from rivals on their home turf)
             if (rivalsOnHomeTurf.Any())
             {
                 float rivalCenterX = (float)rivalsOnHomeTurf.Average(r => r.X);
@@ -645,7 +689,6 @@ namespace LivingSim.World
                 territorialAversionDy = Y - rivalCenterY;
             }
 
-            // Calculate Territory Stay vector (prefer to stay in owned territory)
             var currentCellForTerritory = grid.GetCell(X, Y);
             if (currentCellForTerritory != null && currentCellForTerritory.TerritoryOwnerId == GroupId)
             {
@@ -669,7 +712,6 @@ namespace LivingSim.World
                 }
             }
 
-            // Calculate Biome Seeking vector (if not in a preferred biome)
             var currentCellBiome = grid.GetCell(this.X, this.Y)?.Biome;
             if (currentCellBiome.HasValue && !PreferredBiomes.Contains(currentCellBiome.Value))
             {
@@ -705,7 +747,7 @@ namespace LivingSim.World
                 }
             }
 
-            // --- Scent Detection ---
+            // --- Scent Vectors ---
             if (this.Type == AnimalType.Carnivore)
             {
                 // Carnivores track prey scents
@@ -771,11 +813,10 @@ namespace LivingSim.World
                 }
             }
 
-            // Calculate Homing vector (a gentle pull towards the den)
             homingDx = DenX - X;
             homingDy = DenY - Y;
 
-            // --- Determine Primary Motivation (Hunger vs. Thirst) ---
+            // --- Goal-Seeking Vector (Food, Water, Prey) ---
             float hungerUrgency = Hunger / MaxHunger;
             float thirstUrgency = Thirst / MaxThirst;
             
@@ -790,7 +831,6 @@ namespace LivingSim.World
             
             bool isThirstier = _seekingWater;
 
-            // Calculate Goal Vector (food, prey, or water)
             if (isThirstier)
             {
                 // --- Seek Water ---
@@ -843,23 +883,19 @@ namespace LivingSim.World
                 {
                     // --- Carnivore AI: Prioritize smaller, safer prey ---
                     // 1. Find the closest, smallest prey first.
-                    var closestFoodSource = allAnimals
-                        .Where(a => a.IsAlive && a.Type != AnimalType.Carnivore && a.Size < this.Size) // Prefer smaller prey
-                        .Select(a => new { Animal = a, DistSq = (X - a.X) * (X - a.X) + (Y - a.Y) * (Y - a.Y) })
-                        .Where(a => a.DistSq <= VisionRange * VisionRange)
-                        .OrderBy(a => a.DistSq)
-                        .FirstOrDefault()?.Animal;
+                    var smallPrey = allAnimals
+                        .Where(a => a.IsAlive && a.Type != AnimalType.Carnivore && a.Size < this.Size && IsInVision(a));
+                    var closestFoodSource = FindClosest(smallPrey);
 
                     // 2. If no small prey is found, look for any prey or a carcass (more desperate).
                     if (closestFoodSource == null)
                     {
-                        closestFoodSource = allAnimals // CS8602, CS8629: Handled by null-conditional operator below
+                        var anyPreyOrCarcass = allAnimals
                             .Where(a => a != this)
-                            .Where(a => (a.IsAlive && a.Type != AnimalType.Carnivore) || (!a.IsAlive && !a.IsConsumed))
-                            .Select(a => new { Animal = a, DistSq = (X - a.X) * (X - a.X) + (Y - a.Y) * (Y - a.Y) })
-                            .Where(a => a.DistSq <= VisionRange * VisionRange)
-                            .OrderBy(a => a.DistSq)
-                            .FirstOrDefault()?.Animal;
+                            .Where(a => IsInVision(a))
+                            .Where(a => (a.IsAlive && a.Type != AnimalType.Carnivore) || (!a.IsAlive && !a.IsConsumed));
+                        
+                        closestFoodSource = FindClosest(anyPreyOrCarcass);
                     }
 
                     if (closestFoodSource != null)
@@ -871,7 +907,7 @@ namespace LivingSim.World
                 else if (Type == AnimalType.Omnivore) // Omnivores weigh their options
                 {
                     // --- Omnivore AI: Weigh plants vs. carcasses ---
-                    // 1. Find best plant source in vision (CS8602, CS8629: Handled by bestPlantCell.HasValue check)
+                    // 1. Find best plant source in vision
                     (int x, int y)? bestPlantCell = null;
                     float maxPlantFood = -1f;
                     for (int dx = -VisionRange; dx <= VisionRange; dx++)
@@ -893,12 +929,9 @@ namespace LivingSim.World
                     }
 
                     // 2. Find closest carcass in vision
-                    var closestCarcass = allAnimals // CS8602, CS8629: Handled by null-conditional operator below
-                        .Where(a => !a.IsAlive && !a.IsConsumed)
-                        .Select(a => new { Animal = a, DistSq = (X - a.X) * (X - a.X) + (Y - a.Y) * (Y - a.Y) })
-                        .Where(a => a.DistSq <= VisionRange * VisionRange)
-                        .OrderBy(a => a.DistSq)
-                        .FirstOrDefault()?.Animal;
+                    var carcasses = allAnimals
+                        .Where(a => !a.IsAlive && !a.IsConsumed && IsInVision(a));
+                    var closestCarcass = FindClosest(carcasses);
 
                     // 3. Compare scores and decide target
                     float plantScore = 0;
@@ -932,7 +965,7 @@ namespace LivingSim.World
                     }
                     else if (_lastKnownFoodLocation.HasValue && currentTick - _lastFoodSightingTick < MemoryDurationTicks)
                     {
-                        // No food in sight, use memory (CS8602, CS8629: Handled by _lastKnownFoodLocation.Value)
+                        // No food in sight, use memory
                         var (targetX, targetY) = _lastKnownFoodLocation.Value;
                         if (targetX == X && targetY == Y)
                         {
@@ -949,7 +982,7 @@ namespace LivingSim.World
                 else // Herbivores only seek plants
                 {
                     var bestFoodCells = new List<(int x, int y)>();
-                    float maxFood = -1f; // CS8602, CS8629: Handled by bestFoodCells.Any() check
+                    float maxFood = -1f;
 
                     // Find the best food spots within vision range
                     for (int dx = -VisionRange; dx <= VisionRange; dx++)
@@ -988,7 +1021,7 @@ namespace LivingSim.World
                     }
                     else if (_lastKnownFoodLocation.HasValue && currentTick - _lastFoodSightingTick < MemoryDurationTicks)
                     {
-                        // If no food is in sight, move towards remembered location (CS8602, CS8629: Handled by _lastKnownFoodLocation.Value)
+                        // If no food is in sight, move towards remembered location
                         var (targetX, targetY) = _lastKnownFoodLocation.Value;
                         if (targetX == X && targetY == Y)
                         {
@@ -1004,7 +1037,7 @@ namespace LivingSim.World
                 }
             }
 
-            // --- 6. Combine vectors and determine final direction ---
+            // --- Final Combination & Movement ---
             float goalUrgency = Math.Max(hungerUrgency, thirstUrgency);
             
             // Dynamic Weighting: If needs are critical, ignore social/territorial niceties.
@@ -1041,14 +1074,64 @@ namespace LivingSim.World
                 return;
             }
 
-            // --- 7. Move the animal ---
             int finalMoveDx = Math.Sign(finalDx);
             int finalMoveDy = Math.Sign(finalDy);
             int finalNewX = Math.Clamp(X + (finalMoveDx * moveSpeed), 0, grid.Width - 1);
             int finalNewY = Math.Clamp(Y + (finalMoveDy * moveSpeed), 0, grid.Height - 1);
             TryMoveTo(finalNewX, finalNewY, grid, currentTick, moveSpeed);
         }
+        
+        /// <summary>
+        /// Finds the closest animal from a given list of potential targets.
+        /// More efficient than LINQ's OrderBy().FirstOrDefault().
+        /// </summary>
+        private Animal? FindClosest(IEnumerable<Animal> potentialTargets)
+        {
+            Animal? closest = null;
+            double min_dist_sq = double.MaxValue;
 
+            foreach (var target in potentialTargets)
+            {
+                double distSq = (X - target.X) * (X - target.X) + (Y - target.Y) * (Y - target.Y);
+                if (distSq < min_dist_sq)
+                {
+                    min_dist_sq = distSq;
+                    closest = target;
+                }
+            }
+            return closest;
+        }
+
+        /// <summary>
+        /// Checks if another animal is within the current animal's vision range.
+        /// </summary>
+        private bool IsInVision(Animal other)
+        {
+            return (X - other.X) * (X - other.X) + (Y - other.Y) * (Y - other.Y) <= VisionRange * VisionRange;
+        }
+
+        /// <summary>
+        /// Finds an adjacent cell with water, for drinking from shorelines.
+        /// </summary>
+        private WorldCell? FindAdjacentWater(Grid grid)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    if (dx == 0 && dy == 0) continue;
+                    var neighbor = grid.GetCell(X + dx, Y + dy);
+                    if (neighbor != null && neighbor.Water > 0)
+                    {
+                        return neighbor;
+                    }
+                }
+            }
+            return null;
+        }
+
+        #endregion
+        
         public void Hunt(List<Animal> cellMates, Grid grid)
         {
             // Non-herbivores can engage in combat.
@@ -1058,7 +1141,7 @@ namespace LivingSim.World
             var currentCell = grid.GetCell(this.X, this.Y);
             if (currentCell != null && currentCell.TerritoryOwnerId.HasValue && currentCell.TerritoryOwnerId.Value == this.GroupId)
             {
-                // We are in our own territory. Attack any intruder.
+                // We are in our own territory. Attack any intruder in the same cell.
                 var intruder = cellMates.FirstOrDefault(other => other != this && other.IsAlive && other.GroupId != this.GroupId);
                 if (intruder != null)
                 {
@@ -1081,9 +1164,9 @@ namespace LivingSim.World
                 {
                     // Successfully hunted for food.
                     float damageBonus = 0;
-                    if (Species == Species.Wolf)
+                    if (Species == SpeciesEnum.Wolf)
                     {
-                        int otherWolvesInCell = cellMates.Count(a => a != this && a.Species == Species.Wolf && a.IsAlive);
+                        int otherWolvesInCell = cellMates.Count(a => a != this && a.Species == SpeciesEnum.Wolf && a.IsAlive);
                     if (otherWolvesInCell > 0) damageBonus = 2.0f * otherWolvesInCell; // Slightly reduced pack hunting damage bonus
                     }
 
