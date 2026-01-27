@@ -1,0 +1,15 @@
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\bin\Debug\net10.0\LivingSim.exe
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\bin\Debug\net10.0\LivingSim.deps.json
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\bin\Debug\net10.0\LivingSim.runtimeconfig.json
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\bin\Debug\net10.0\LivingSim.dll
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\bin\Debug\net10.0\LivingSim.pdb
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.AssemblyInfoInputs.cache
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.AssemblyInfo.cs
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.csproj.CoreCompileInputs.cache
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.sourcelink.json
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.dll
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\refint\LivingSim.dll
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.pdb
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\LivingSim.genruntimeconfig.cache
+C:\Users\fezeh\OneDrive\Documents\New Project\LivingSim\obj\Debug\net10.0\ref\LivingSim.dll
