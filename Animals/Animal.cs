@@ -19,9 +19,9 @@ namespace LivingSim.Animals
         private const float BaseMaxHealth = 10f;
 
         public const int MinReproductionAge = 10;
-        private const float ReproductionHungerThreshold = 3.0f; // Must be less hungry than this to reproduce
+        private const float ReproductionHungerThreshold = 1.0f; // This means they must have very little hunger (be full) to reproduce. // CHANGED: Was 3.0f. Now 1.0f.
         private const float BaseReproductionCostPerOffspring = 3.0f; // Reduced cost to make reproduction less taxing
-        public const float BaseReproductionChance = 0.05f; // Increased to 5% to allow for more population recovery.
+        public const float BaseReproductionChance = 0.01f; // Evolution takes time. Lower chance prevents instant overpopulation. // CHANGED: Was 0.05f (5%). Now 0.01f (1%).
         private const int BaseOffspringCount = 1; // Default number of offspring for an animal with Fertility = 1.0
         public const int MaxGroupSize = 5; // The maximum number of animals in a social group.
 
@@ -238,11 +238,14 @@ namespace LivingSim.Animals
         };
 
         // --- Metabolism Costs ---
-        private const float BaseMetabolism = 0.2f; // Increased base cost of living
-        private const float SizeMetabolismFactor = 0.1f; // Larger bodies burn much more energy
-        private const float SpeedMetabolismFactor = 0.05f; // High speed is expensive
-        private const float VisionMetabolismFactor = 0.02f; // Better senses cost more energy
-        private const float AggressionMetabolismFactor = 0.01f; // Aggression now has a noticeable metabolic cost
+        // LOWERED: Was 0.2f. Now 0.01f. 
+        // 0.2 meant they starved in 50 ticks (2 hours). 0.01 means they last 1000 ticks (approx 2 days).
+        private const float BaseMetabolism = 0.01f; 
+
+        private const float SizeMetabolismFactor = 0.05f; // Lowered from 0.1f
+        private const float SpeedMetabolismFactor = 0.02f; // Lowered from 0.05f
+        private const float VisionMetabolismFactor = 0.01f; // Lowered from 0.02f
+        private const float AggressionMetabolismFactor = 0.01f;
 
         public float MaxHunger => BaseMaxHunger * Size;
         public float MaxThirst => BaseMaxThirst * Size;
@@ -350,8 +353,9 @@ namespace LivingSim.Animals
             }
 
             // Base hunger cost per unit of distance moved.
-            const float movementHungerCost = 0.05f;
-            const float movementThirstCost = 0.07f;
+            // LOWERED: Was 0.05f. Moving 1 tile shouldn't burn 5% of your stomach.
+            const float movementHungerCost = 0.005f; 
+            const float movementThirstCost = 0.01f;
             Hunger += (float)distance * movementHungerCost * terrainMultiplier * Size;
             Thirst += (float)distance * movementThirstCost * terrainMultiplier * Size;
 
@@ -746,7 +750,7 @@ namespace LivingSim.Animals
                     biomeSeekingDy = closestPreferredCell.Value.y - Y;
                 }
             }
-
+            
             // --- Scent Vectors ---
             if (this.Type == AnimalType.Carnivore)
             {
@@ -754,7 +758,8 @@ namespace LivingSim.Animals
                 float maxPreyScentStrength = 0;
                 (int x, int y) preyScentLocation = (0, 0);
 
-                for (int dx = -VisionRange; dx <= VisionRange; dx++)
+                // LOOK HERE: This is the loop you are replacing/modifying
+                for (int dx = -VisionRange; dx <= VisionRange; dx++) 
                 {
                     for (int dy = -VisionRange; dy <= VisionRange; dy++)
                     {
@@ -765,6 +770,7 @@ namespace LivingSim.Animals
                             var cell = grid.GetCell(nx, ny);
                             foreach (var scent in cell.Scents)
                             {
+                            
                                 if (scent.Type != AnimalType.Carnivore && scent.Strength > maxPreyScentStrength)
                                 {
                                     maxPreyScentStrength = scent.Strength;
@@ -1104,10 +1110,21 @@ namespace LivingSim.Animals
 
         /// <summary>
         /// Checks if another animal is within the current animal's vision range.
+        /// Now includes a "Scent Tracking" bonus for Carnivores hunting prey.
         /// </summary>
         private bool IsInVision(Animal other)
         {
-            return (X - other.X) * (X - other.X) + (Y - other.Y) * (Y - other.Y) <= VisionRange * VisionRange;
+            int effectiveRange = VisionRange;
+
+            // BUFF: Carnivores use Scent to detect prey from 2x their visual distance.
+            // This prevents them from starving just because prey is slightly off-screen.
+            if (this.Type == AnimalType.Carnivore && other.Type != AnimalType.Carnivore)
+            {
+                effectiveRange *= 2; 
+            }
+
+            // Standard distance check using the (possibly modified) range
+            return (X - other.X) * (X - other.X) + (Y - other.Y) * (Y - other.Y) <= effectiveRange * effectiveRange;
         }
 
         /// <summary>
@@ -1234,20 +1251,34 @@ namespace LivingSim.Animals
                     break;
 
                 case AnimalType.Omnivore:
-                    // Omnivores are opportunistic: they prefer to scavenge but will eat plants if no meat is available.
+                    // 1. Try to scavenge meat first (high value)
                     var omniCarcass = cellMates?.FirstOrDefault(a => a != this && !a.IsAlive && a.CarcassFoodValue > 0);
                     if (omniCarcass != null)
                     {
-                        // Eat from the carcass until full, but not more than what's available.
                         float amountToEat = MaxHunger - Hunger;
                         float foodFromCarcass = omniCarcass.EatFromCarcass(amountToEat);
-                        Hunger -= foodFromCarcass;
+                    Hunger -= foodFromCarcass;
                     }
-                    else
+                    // 2. If no meat, eat plants.
+                    else 
+                {
+                    // BUFF: Omnivores now get 2x efficiency from Forests (Berries/Nuts)
+                        float forageEfficiency = 0.5f; 
+                        if (cell.Terrain == TerrainType.Forest) 
+                        {
+                            forageEfficiency = 1.0f; // Forests are better for bears/boars than open plains
+                        }
+        
+                    // They consume less form the tile (0.5) but might get more value if in forest
+                    foodEaten = cell.ConsumeFood(0.5f); 
+        
+                    // Bonus hunger reduction if in forest (simulating finding berries without destroying the grass)
+                    if (cell.Terrain == TerrainType.Forest)
                     {
-                        foodEaten = cell.ConsumeFood(0.5f);
+                        Hunger -= 0.5f; // Extra bonus food that doesn't deplete the tile
                     }
-                    break;
+                }
+                break;
 
                 case AnimalType.Carnivore:
                     // In the Eat phase, carnivores will scavenge if possible. Hunting is a separate action.

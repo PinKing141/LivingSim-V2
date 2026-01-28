@@ -3,26 +3,20 @@ using System.Collections.Generic;
 using System.Linq;
 using LivingSim.Core;
 using LivingSim.World;
+using LivingSim.Animals; // <--- ADDED THIS
 
 namespace LivingSim.Visualisation
 {
-    /// <summary>
-    /// Renders the simulation state to the console.
-    /// </summary>
     public class ConsoleVisualizer
     {
         private readonly Dictionary<Guid, ConsoleColor> _groupColors = new Dictionary<Guid, ConsoleColor>();
 
-        /// <summary>
-        /// Draws the current state of the grid, including terrain, resources, and animals.
-        /// </summary>
         public void Draw(Grid grid, IReadOnlyList<Animal> animals, SimulationClock clock, List<Dictionary<Species, int>> history, bool showStats)
         {
             Console.SetCursorPosition(0, 0);
 
             if (showStats)
             {
-                // Draw the population graph. Width is doubled because the map uses "char + space".
                 DrawStatistics(history, grid.Width * 2, grid.Height);
             }
             else
@@ -54,7 +48,6 @@ namespace LivingSim.Visualisation
                 {
                     if (animal.X >= 0 && animal.X < grid.Width && animal.Y >= 0 && animal.Y < grid.Height)
                     {
-                        // Animal characters are now colored by their species for easy identification.
                         var (character, speciesColor) = GetAnimalDisplay(animal);
                         var existingBg = displayGrid[animal.X, animal.Y].bg;
                         displayGrid[animal.X, animal.Y] = (character, speciesColor, existingBg);
@@ -70,14 +63,13 @@ namespace LivingSim.Visualisation
                         var fg = cell.fg;
                         var bg = cell.bg;
 
-                        // Simple contrast check: if foreground matches background, force white text
                         if (fg == bg) fg = ConsoleColor.White;
 
                         Console.ForegroundColor = fg;
                         Console.BackgroundColor = bg;
                         Console.Write(cell.character + " ");
                     }
-                    Console.BackgroundColor = ConsoleColor.Black; // Reset background for EOL
+                    Console.BackgroundColor = ConsoleColor.Black; 
                     Console.WriteLine();
                 }
                 Console.ResetColor();
@@ -100,7 +92,6 @@ namespace LivingSim.Visualisation
 
         private void DrawStatistics(List<Dictionary<Species, int>> history, int width, int height)
         {
-            // Determine max population for scaling
             int maxPop = 0;
             if (history.Count > 0)
             {
@@ -108,11 +99,9 @@ namespace LivingSim.Visualisation
             }
             if (maxPop == 0) maxPop = 1;
 
-            // We want to show the last 'width' ticks.
             int count = history.Count;
             int startIndex = Math.Max(0, count - width);
             
-            // Buffer for the graph
             var buffer = new (char c, ConsoleColor color)[width, height];
             for(int y=0; y<height; y++)
                 for(int x=0; x<width; x++)
@@ -129,7 +118,6 @@ namespace LivingSim.Visualisation
                     Species species = kvp.Key;
                     int pop = kvp.Value;
                     
-                    // Scale pop to height (0 to height-1). Invert Y so 0 is at bottom.
                     int scaledY = (int)(((float)pop / maxPop) * (height - 1));
                     int y = height - 1 - scaledY;
                     
@@ -141,7 +129,6 @@ namespace LivingSim.Visualisation
                 }
             }
 
-            // Render buffer
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
@@ -157,7 +144,6 @@ namespace LivingSim.Visualisation
 
         private (char, ConsoleColor, ConsoleColor) GetTerrainDisplay(WorldCell cell, long currentTick)
         {
-            // Determine Foreground (Terrain)
             var fg = cell.Terrain switch {
                 TerrainType.Water => ConsoleColor.Blue,
                 TerrainType.Mountain => ConsoleColor.Gray,
@@ -170,7 +156,6 @@ namespace LivingSim.Visualisation
                 _ => ConsoleColor.White,
             };
 
-            // Determine Background (Territory)
             var bg = ConsoleColor.Black;
             if (cell.TerritoryOwnerId.HasValue)
             {
@@ -178,7 +163,6 @@ namespace LivingSim.Visualisation
                 bg = ToDarkColor(groupColor);
             }
 
-            // Determine Character
             var ch = cell.Terrain switch {
                 TerrainType.Water => '~',
                 TerrainType.Mountain => '^',
@@ -197,7 +181,6 @@ namespace LivingSim.Visualisation
         private (char, ConsoleColor) GetAnimalDisplay(Animal animal) => GetSpeciesDisplay(animal.Species);
 
         private (char, ConsoleColor) GetSpeciesDisplay(Species species) => species switch {
-            // Species colors are chosen for high contrast and readability.
             Species.Rabbit => ('r', ConsoleColor.White),
             Species.Deer => ('D', ConsoleColor.White),
             Species.Boar => ('b', ConsoleColor.DarkYellow),
@@ -221,7 +204,6 @@ namespace LivingSim.Visualisation
         {
             if (!_groupColors.TryGetValue(groupId, out ConsoleColor color))
             {
-                // Use a palette of bright, distinct colors for family groups/territories.
                 ConsoleColor[] palette = {
                     ConsoleColor.Cyan, ConsoleColor.Yellow, ConsoleColor.Red,
                     ConsoleColor.Green, ConsoleColor.Magenta, ConsoleColor.White
@@ -241,7 +223,7 @@ namespace LivingSim.Visualisation
             ConsoleColor.Green => ConsoleColor.DarkGreen,
             ConsoleColor.Magenta => ConsoleColor.DarkMagenta,
             ConsoleColor.Blue => ConsoleColor.DarkBlue,
-            _ => color, // If it's already dark or has no dark version, return it.
+            _ => color,
         };
     }
 }

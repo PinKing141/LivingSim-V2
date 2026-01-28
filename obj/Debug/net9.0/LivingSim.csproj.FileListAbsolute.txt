@@ -1,0 +1,14 @@
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\LivingSim.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\LivingSim.AssemblyInfoInputs.cache
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\LivingSim.AssemblyInfo.cs
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\LivingSim.csproj.CoreCompileInputs.cache
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\bin\Debug\net9.0\LivingSim.exe
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\bin\Debug\net9.0\LivingSim.deps.json
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\bin\Debug\net9.0\LivingSim.runtimeconfig.json
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\bin\Debug\net9.0\LivingSim.dll
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\bin\Debug\net9.0\LivingSim.pdb
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\LivingSim.dll
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\refint\LivingSim.dll
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\LivingSim.pdb
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\LivingSim.genruntimeconfig.cache
+C:\Users\ezehf2\Downloads\LivingSim-V2-main\obj\Debug\net9.0\ref\LivingSim.dll

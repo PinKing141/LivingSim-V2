@@ -4,7 +4,7 @@ using System.Linq;
 using LivingSim.World;
 using LivingSim.Core; // Added for Season enum
 
-namespace LivingSim.Environment
+namespace LivingSim.Animals
 {
     public class AnimalManager
     {

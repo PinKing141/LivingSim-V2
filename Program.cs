@@ -8,6 +8,7 @@ using LivingSim.Environment;
 using LivingSim.Generation;
 using LivingSim.Observation;
 using LivingSim.Visualisation;
+using LivingSim.Animals; // <--- ADDED THIS
 
 class Program
 {

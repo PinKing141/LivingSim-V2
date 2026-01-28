@@ -1,4 +1,5 @@
 using System;
+using LivingSim.Core; // <--- ADDED: This allows access to AnimalType
 
 namespace LivingSim.World
 {
