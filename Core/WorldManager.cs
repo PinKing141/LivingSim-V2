@@ -2,6 +2,7 @@ using LivingSim.World;
 using LivingSim.Environment;
 using LivingSim.Observation;
 using LivingSim.Core; // Added for Season enum
+using LivingSim.Animals;
 
 namespace LivingSim.Core
 {
