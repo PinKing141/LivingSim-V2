@@ -1,30 +1,31 @@
 using System;
+using System.Linq;
 
 namespace LivingSim.Generation
 {
-    /// <summary>
-    /// A basic 2D noise generator, similar to Perlin noise.
-    /// This is a simplified implementation to fulfill the WorldGenerator's dependency.
-    /// For a full Simplex Noise implementation, a more complex algorithm is required.
-    /// </summary>
     public class SimplexNoise
     {
         private readonly int[] _perm;
-        private readonly int[] _p;
 
         public SimplexNoise(int seed)
         {
             _perm = new int[512];
-            _p = new int[256];
-            Random rand = new Random(seed);
+            var random = new Random(seed);
+
+            // 1. Create an ordered array 0..255
+            var p = Enumerable.Range(0, 256).ToArray();
+
+            // 2. Fisher-Yates Shuffle (FIXED: This creates natural randomness)
             for (int i = 0; i < 256; i++)
             {
-                _p[i] = rand.Next(256);
+                int swapIndex = random.Next(i, 256);
+                (p[i], p[swapIndex]) = (p[swapIndex], p[i]);
             }
 
+            // 3. Duplicate for overflow handling
             for (int i = 0; i < 512; i++)
             {
-                _perm[i] = _p[i & 255];
+                _perm[i] = p[i & 255];
             }
         }
 
@@ -36,21 +37,16 @@ namespace LivingSim.Generation
             return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
         }
 
-        /// <summary>
-        /// Generates a 2D noise value between -1 and 1.
-        /// </summary>
         public float Generate(float x, float y)
         {
-            // This is a simplified Perlin-like noise, not true Simplex noise.
-            // It serves the purpose of providing a varied noise map for world generation.
             int X = (int)Math.Floor(x) & 255;
             int Y = (int)Math.Floor(y) & 255;
 
             x -= (float)Math.Floor(x);
             y -= (float)Math.Floor(y);
 
-            float u = x * x * (3 - 2 * x);
-            float v = y * y * (3 - 2 * y);
+            float u = Fade(x);
+            float v = Fade(y);
 
             int A = _perm[X] + Y;
             int B = _perm[X + 1] + Y;
@@ -63,13 +59,10 @@ namespace LivingSim.Generation
             float nx0 = Lerp(n00, n10, u);
             float nx1 = Lerp(n01, n11, u);
 
-            // Normalize to -1 to 1 range (approximate for this simplified noise)
             return Lerp(nx0, nx1, v);
         }
 
-        private static float Lerp(float a, float b, float t)
-        {
-            return a + t * (b - a);
-        }
+        private static float Fade(float t) => t * t * t * (t * (t * 6 - 15) + 10);
+        private static float Lerp(float a, float b, float t) => a + t * (b - a);
     }
 }

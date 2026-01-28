@@ -22,8 +22,8 @@ namespace LivingSim.Generation
             int height = grid.Height;
 
             // --- PASS 1: Height Map ---
-            // Small scale = zoomed in. 0.05 is good for a 30-100 wide map.
-            float heightScale = 0.05f; 
+            // Small scale = zoomed in. 0.02 is good for larger continents, smoother terrain.
+            float heightScale = 0.02f;
             for (int x = 0; x < width; x++)
             {
                 for (int y = 0; y < height; y++)
