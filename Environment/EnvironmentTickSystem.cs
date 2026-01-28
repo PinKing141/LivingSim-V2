@@ -1,62 +1,127 @@
-using LivingSim.World;
+using System;
+using System.Collections.Generic; // Added for List if needed
 using LivingSim.Core;
+using LivingSim.World;
 
 namespace LivingSim.Environment
 {
-    /// <summary>
-    /// Updates the world grid each tick: regenerates and decays resources.
-    /// </summary>
-    public sealed class EnvironmentTickSystem
+    public class EnvironmentTickSystem
     {
-        private const int BaseTerritoryDecayDurationTicks = 500; // Base duration for a claim with strength 1.0
-        private const float ScentDecayRate = 0.05f; // How quickly scent fades per tick
+        // FIX: This property was missing, causing CS1061 in WorldManager
+        public WeatherType CurrentWeather { get; private set; } = WeatherType.Clear;
+        
+        private readonly Random _random = new Random();
+        private int _weatherDuration = 0;
 
-        public void Tick(Grid grid, Season currentSeason, long currentTick)
+        public void Tick(Grid grid, Season season, long currentTick)
         {
-            // Determine resource regeneration rates based on the current season.
-            (float foodRate, float waterRate) rates = currentSeason switch
+            // 1. Update Weather (Change periodically)
+            if (_weatherDuration <= 0)
             {
-                Season.Spring => (0.2f, 0.2f),   // Reduced bountiful growth
-                Season.Summer => (0.15f, 0.15f),  // Reduced steady growth
-                Season.Autumn => (0.08f, 0.1f),  // Growth slows significantly
-                Season.Winter => (0.01f, 0.05f), // Harsh winter
-                _ => (0.1f, 0.1f)
-            };
+                ChangeWeather(season);
+                // Weather lasts between 50 and 150 ticks (5-15 seconds)
+                _weatherDuration = _random.Next(50, 150); 
+            }
+            _weatherDuration--;
 
+            // 2. Determine effects based on weather
+            float scentDecayRate = 0.5f; // Base decay
+
+            switch (CurrentWeather)
+            {
+                case WeatherType.Rain:
+                case WeatherType.Storm:
+                    scentDecayRate = 5.0f; // Rain washes scents away fast
+                    ReplenishWater(grid);  // Refills puddles
+                    break;
+                case WeatherType.Heatwave:
+                    EvaporateWater(grid);  // Dries up puddles
+                    break;
+                case WeatherType.Snow:
+                    // Snow logic placeholder
+                    break;
+            }
+
+            // 3. Process the Grid (Decay Scents & Regrow Resources)
+            ProcessGrid(grid, scentDecayRate);
+        }
+
+        private void ChangeWeather(Season season)
+        {
+            double roll = _random.NextDouble();
+            
+            switch (season)
+            {
+                case Season.Summer:
+                    if (roll < 0.70) CurrentWeather = WeatherType.Clear;
+                    else if (roll < 0.90) CurrentWeather = WeatherType.Rain;
+                    else CurrentWeather = WeatherType.Heatwave;
+                    break;
+                case Season.Winter:
+                    if (roll < 0.50) CurrentWeather = WeatherType.Clear;
+                    else if (roll < 0.90) CurrentWeather = WeatherType.Snow;
+                    else CurrentWeather = WeatherType.Fog;
+                    break;
+                case Season.Spring:
+                case Season.Autumn:
+                    if (roll < 0.50) CurrentWeather = WeatherType.Clear;
+                    else if (roll < 0.85) CurrentWeather = WeatherType.Rain;
+                    else CurrentWeather = WeatherType.Fog;
+                    break;
+            }
+        }
+
+        private void ProcessGrid(Grid grid, float scentDecayRate)
+        {
             for (int x = 0; x < grid.Width; x++)
             {
                 for (int y = 0; y < grid.Height; y++)
                 {
                     var cell = grid.GetCell(x, y);
 
-                    // --- Overgrazing Mechanic ---
-                    // If a cell has been eaten bare, its food regenerates much slower.
-                    float currentFoodRate = rates.foodRate;
-                    if (cell.Food < 1.0f) // If the cell is overgrazed
-                        currentFoodRate *= 0.3f;
-
-                    cell.AddFood(currentFoodRate);
-                    cell.AddWater(rates.waterRate);
-
-                    // --- Scent Decay ---
-                    for (int i = cell.Scents.Count - 1; i >= 0; i--)
+                    // Decay Scents
+                    if (cell.Scents.Count > 0)
                     {
-                        var scent = cell.Scents[i];
-                        scent.Strength -= ScentDecayRate;
-                        if (scent.Strength <= 0)
-                            cell.Scents.RemoveAt(i);
+                        foreach (var scent in cell.Scents)
+                        {
+                            scent.Strength -= scentDecayRate;
+                        }
+                        cell.Scents.RemoveAll(s => s.Strength <= 0);
                     }
-
-                    // --- Territory Decay ---
-                    if (cell.TerritoryOwnerId.HasValue)
+                    
+                    // Simple Regrowth (Grass/Food)
+                    if (cell.Resource == ResourceType.None && cell.Terrain == TerrainType.Plains)
                     {
-                        float effectiveDecayDuration = BaseTerritoryDecayDurationTicks * cell.TerritoryStrength;
-                        if (currentTick - cell.LastTerritoryRefreshTick > effectiveDecayDuration)
-                            cell.TerritoryOwnerId = null; // Territory is lost
+                         if (_random.NextDouble() < 0.001) cell.Resource = ResourceType.BerryBush;
                     }
+                }
+            }
+        }
 
-                    // Optional: decay resources
-                    cell.DecayResources();
+        private void ReplenishWater(Grid grid)
+        {
+            for (int i = 0; i < 20; i++)
+            {
+                int x = _random.Next(grid.Width);
+                int y = _random.Next(grid.Height);
+                var cell = grid.GetCell(x, y);
+                if (cell != null && (cell.Terrain == TerrainType.Wetlands || cell.Terrain == TerrainType.River))
+                {
+                    cell.Water = Math.Min(cell.Water + 5.0f, 100f);
+                }
+            }
+        }
+
+        private void EvaporateWater(Grid grid)
+        {
+            for (int i = 0; i < 20; i++) 
+            {
+                int x = _random.Next(grid.Width);
+                int y = _random.Next(grid.Height);
+                var cell = grid.GetCell(x, y);
+                if (cell.Water > 0)
+                {
+                    cell.AddWater(-2.0f);
                 }
             }
         }

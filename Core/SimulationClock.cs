@@ -1,73 +1,57 @@
+using System;
+
 namespace LivingSim.Core
 {
-    /// <summary>
-    /// Represents the four seasons of the year.
-    /// </summary>
-    public enum Season { Spring, Summer, Autumn, Winter }
-
-    /// <summary>
-    /// A simulation clock that tracks time in discrete ticks.
-    /// Tracks time in ticks and exposes derived time units.
-    /// </summary>
-    public sealed class SimulationClock 
+    public enum Season
     {
-        /// <summary>
-        //---- Constants ----
-        public const int TicksPerHour = 25; // Reduced from 100 to make days pass faster
-        public const int HoursPerDay = 24;
-        public const int DaysPerSeason = 91;
-        public const int DaysPerYear = DaysPerSeason * 4 + 1; // 365
-        public const int TicksPerDay = TicksPerHour * HoursPerDay;
-        public const int TicksPerYear = TicksPerDay * DaysPerYear;
+        Spring,
+        Summer,
+        Autumn,
+        Winter
+    }
 
-        // --- State Properties ---
-        public long CurrentTick {get; private set; }
+    public class SimulationClock
+    {
+        public long CurrentTick { get; private set; }
 
-        //--- Derived Time Properties ---
-        public int CurrentHour => (int)((CurrentTick % TicksPerDay) / TicksPerHour);
-        public int CurrentDay => (int)((CurrentTick / TicksPerDay) % DaysPerYear);
-        public bool IsNight => CurrentHour >= 18 || CurrentHour < 6; // Night is from 6 PM to 5:59 AM
-        public int CurrentYear => (int)(CurrentTick / TicksPerYear);
+        // --- Time Configuration ---
+        // 240 Ticks per Day. (24 seconds IRL at 100ms speed)
+        public const int TicksPerHour = 10;
+        public const int TicksPerDay = TicksPerHour * 24;
+
+        // --- CALENDAR CONFIGURATION (120 Day Year) ---
+        // 30 Days per Season. Long enough to feel the cold of Winter.
+        public const int DaysPerSeason = 30;
+        public const int SeasonsPerYear = 4;
+        public const int DaysPerYear = DaysPerSeason * SeasonsPerYear;
+
+        public SimulationClock()
+        {
+            CurrentTick = 0;
+        }
+
+        public void AdvanceTick()
+        {
+            CurrentTick++;
+        }
+
+        // --- Computed Properties ---
+        public long CurrentDay => CurrentTick / TicksPerDay;
+        public int Year => (int)(CurrentDay / DaysPerYear) + 1;
+        public int DayOfYear => (int)(CurrentDay % DaysPerYear) + 1;
+        public int Hour => (int)((CurrentTick % TicksPerDay) / TicksPerHour);
+
         public Season CurrentSeason
         {
             get
             {
-                int dayOfYear = CurrentDay;
-                if (dayOfYear < DaysPerSeason) return Season.Spring;
-                if (dayOfYear < DaysPerSeason * 2) return Season.Summer;
-                if (dayOfYear < DaysPerSeason * 3) return Season.Autumn;
-                return Season.Winter;
+                int seasonIndex = (int)((DayOfYear - 1) / DaysPerSeason);
+                return (Season)(seasonIndex % 4);
             }
         }
-        
-        // ---Constructors---
-        public SimulationClock(long startingTick = 0)
-        {
-            CurrentTick = startingTick;
-        }
 
-        // ---Public API---
-        public void AdvanceTick()
-        {
-            CurrentTick ++;
-        }
+        public bool IsNight => Hour >= 20 || Hour < 6;
 
-        public void AdvanceTicks(long ticks)
-        {
-            if (ticks < 0)
-            {
-                throw new System.ArgumentException("Cannot advance negative ticks.");
-            }
-            CurrentTick += ticks;
-        }
-        public bool IsNewDay(long previousTick)
-        {
-            return (previousTick / TicksPerDay) != (CurrentTick / TicksPerDay);
-        }
-
-        public bool IsNewYear(long previousTick)
-        {
-            return (previousTick / TicksPerYear) != (CurrentTick / TicksPerYear);
-        }
+        public string TimeString => $"{Hour:D2}:00";
     }
 }

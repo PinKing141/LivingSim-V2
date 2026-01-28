@@ -19,7 +19,7 @@ namespace LivingSim.World
 
         // --- Resource Values (Simulation) ---
         public float Food { get; private set; }
-        public float Water { get; private set; }
+        public float Water { get; set; }
         public float Timber { get; private set; }
 
         // --- Territory & Residents ---

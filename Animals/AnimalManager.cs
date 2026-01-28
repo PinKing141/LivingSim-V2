@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using LivingSim.World;
 using LivingSim.Core; // Added for Season enum
+using LivingSim.Environment;
 
 namespace LivingSim.Animals
 {
@@ -46,17 +47,47 @@ namespace LivingSim.Animals
             // This ensures consistency between Species and Type.
         }
 
-        public void Tick(Grid grid, long currentTick, bool isNight, Season currentSeason)
+        public void Tick(Grid grid, long currentTick, bool isNight, Season currentSeason, WeatherType currentWeather)
         {
-            var animalsThisTick = _animals.ToList(); // Work on a copy to avoid modification issues.
+            var animalsThisTick = _animals.Where(a => a.IsAlive).ToList();
 
-            // 1. All animals move.
+            // --- OPTIMIZATION: Spatial Partitioning (Buckets) ---
+            // 1. Create buckets (Dictionary maps "GridCell" -> List of Animals)
+            // We use a bucket size of 20 (approx max vision range)
+            int bucketSize = 20;
+            var buckets = new Dictionary<(int x, int y), List<Animal>>();
+
             foreach (var animal in animalsThisTick)
             {
-                if (animal.IsAlive)
+                var key = (animal.X / bucketSize, animal.Y / bucketSize);
+                if (!buckets.ContainsKey(key)) buckets[key] = new List<Animal>();
+                buckets[key].Add(animal);
+            }
+
+            // 2. Move Animals using only relevant neighbors
+            foreach (var animal in animalsThisTick)
+            {
+                if (!animal.IsAlive) continue;
+
+                // Collect only animals from current and neighboring buckets (3x3 grid)
+                var nearbyAnimals = new List<Animal>();
+                int cx = animal.X / bucketSize;
+                int cy = animal.Y / bucketSize;
+
+                for (int dx = -1; dx <= 1; dx++)
                 {
-                    animal.Move(grid, animalsThisTick, currentTick, isNight, currentSeason);
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        if (buckets.TryGetValue((cx + dx, cy + dy), out var bucketContent))
+                        {
+                            nearbyAnimals.AddRange(bucketContent);
+                        }
+                    }
                 }
+
+                // Pass ONLY the nearby animals to the Move function
+                // This turns O(N^2) into O(N) -> Massive speedup
+                animal.Move(grid, nearbyAnimals, currentTick, isNight, currentSeason, currentWeather);
             }
 
             // 2. Social Dynamics: Expel members from oversized groups.
@@ -121,7 +152,7 @@ namespace LivingSim.Animals
                 if (animal.IsAlive) // Animal might have been killed in step 3
                 {
                     allAnimalLocations.TryGetValue((animal.X, animal.Y), out var cellMates);
-                    animal.EatAndAge(grid.GetCell(animal.X, animal.Y), cellMates ?? new List<Animal>(), grid);
+                    animal.EatAndAge(grid.GetCell(animal.X, animal.Y), cellMates ?? new List<Animal>(), grid, currentTick);
                 }
             }
 

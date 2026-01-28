@@ -47,7 +47,7 @@ namespace LivingSim.Core
             _environmentTick.Tick(WorldGrid, Clock.CurrentSeason, Clock.CurrentTick);
 
             // 3. Tick animals (consume resources)
-            _animals.Tick(WorldGrid, Clock.CurrentTick, Clock.IsNight, Clock.CurrentSeason);
+            _animals.Tick(WorldGrid, Clock.CurrentTick, Clock.IsNight, Clock.CurrentSeason, _environmentTick.CurrentWeather);
 
             // 4. Collect metrics
             _metrics.CollectMetrics(WorldGrid, Clock);

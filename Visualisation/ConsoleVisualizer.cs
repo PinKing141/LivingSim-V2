@@ -114,51 +114,85 @@ namespace LivingSim.Visualisation
 
         private (char, ConsoleColor, ConsoleColor) GetCellDisplay(WorldCell cell, bool showTerritories)
         {
+            // 1. Force Black Background for clean look
+            ConsoleColor bg = ConsoleColor.Black;
+            ConsoleColor fg = ConsoleColor.White;
+            char ch = ' ';
+
+            // --- MODE A: TERRITORY VIEW ---
             if (showTerritories && cell.TerritoryOwnerId.HasValue)
             {
-                ConsoleColor groupColor = GetGroupColor(cell.TerritoryOwnerId.Value);
-                return ('▒', groupColor, ToDarkColor(groupColor)); 
+                fg = GetGroupColor(cell.TerritoryOwnerId.Value);
+                ch = '#';
+                return (ch, fg, bg);
             }
-            
-            ConsoleColor bg = cell.Biome switch
-            {
-                Biome.Water => ConsoleColor.DarkBlue,
-                Biome.Mountain => ConsoleColor.DarkGray,
-                Biome.Desert => ConsoleColor.DarkYellow,
-                Biome.Tundra => ConsoleColor.DarkCyan,
-                Biome.Forest => ConsoleColor.DarkGreen,
-                Biome.Wetlands => ConsoleColor.DarkMagenta,
-                _ => ConsoleColor.Black
-            };
-            if (cell.Terrain == TerrainType.River) bg = ConsoleColor.Blue;
 
-            char ch = ' ';
-            ConsoleColor fg = ConsoleColor.White;
+            // --- MODE B: SHADER VIEW ---
 
+            // 1. Draw Resources (High Priority)
             if (cell.Resource != ResourceType.None)
             {
                 switch (cell.Resource)
                 {
-                    case ResourceType.BerryBush:   ch = 'o'; fg = ConsoleColor.Red; break;
-                    case ResourceType.IronOre:     ch = '*'; fg = ConsoleColor.Gray; break;
-                    case ResourceType.GoldDeposit: ch = '$'; fg = ConsoleColor.Yellow; break;
-                    case ResourceType.Boulder:     ch = 'O'; fg = ConsoleColor.DarkGray; break;
-                    case ResourceType.AncientRuins:ch = 'Ω'; fg = ConsoleColor.Cyan; break;
+                    case ResourceType.BerryBush:   return ('♣', ConsoleColor.Red, bg);
+                    case ResourceType.IronOre:     return ('▲', ConsoleColor.Gray, bg);
+                    case ResourceType.GoldDeposit: return ('♦', ConsoleColor.Yellow, bg);
+                    case ResourceType.Boulder:     return ('●', ConsoleColor.DarkGray, bg);
+                    case ResourceType.AncientRuins:return ('Ω', ConsoleColor.Cyan, bg);
                 }
             }
-            else
+
+            // 2. Draw Terrain with "Shader" Logic
+            switch (cell.Terrain)
             {
-                switch (cell.Terrain)
-                {
-                    case TerrainType.Mountain: ch = '^'; fg = ConsoleColor.White; break;
-                    case TerrainType.Forest:   ch = 'T'; fg = ConsoleColor.Green; break;
-                    case TerrainType.Water:    ch = '~'; fg = ConsoleColor.Cyan; break;
-                    case TerrainType.River:    ch = '≈'; fg = ConsoleColor.White; break;
-                    case TerrainType.Desert:   ch = '.'; fg = ConsoleColor.Yellow; break;
-                    case TerrainType.Plains:   ch = ','; fg = ConsoleColor.DarkGreen; break;
-                    default: ch = ' '; break;
-                }
+                case TerrainType.Water: // Deep Ocean
+                    if (cell.Height < 0.15f)      { ch = '█'; fg = ConsoleColor.DarkBlue; } // Abyss
+                    else if (cell.Height < 0.25f) { ch = '▓'; fg = ConsoleColor.DarkBlue; } // Deep
+                    else                          { ch = '▒'; fg = ConsoleColor.Blue; }     // Standard
+                    break;
+
+                case TerrainType.River: // Shallow/Flowing
+                     // Use Moisture to simulate "current" or depth variance if height is uniform
+                    if (cell.Moisture > 0.7f)     { ch = '≈'; fg = ConsoleColor.Blue; }     // Fast
+                    else                          { ch = '░'; fg = ConsoleColor.Cyan; }     // Shallow
+                    break;
+
+                case TerrainType.Mountain: // Elevation
+                    if (cell.Height > 0.95f)      { ch = '▲'; fg = ConsoleColor.White; }    // Peak (Snow cap)
+                    else if (cell.Height > 0.85f) { ch = '▓'; fg = ConsoleColor.DarkGray; } // Cliff
+                    else if (cell.Height > 0.75f) { ch = '▒'; fg = ConsoleColor.Gray; }     // Slope
+                    else                          { ch = '░'; fg = ConsoleColor.Gray; }     // Foothill
+                    break;
+
+                case TerrainType.Forest: // Density
+                    if (cell.Moisture > 0.8f)     { ch = '♠'; fg = ConsoleColor.DarkGreen; } // Ancient Tree
+                    else if (cell.Moisture > 0.6f){ ch = '▒'; fg = ConsoleColor.DarkGreen; } // Thick Woods
+                    else                          { ch = '░'; fg = ConsoleColor.Green; }     // Light Brush
+                    break;
+
+                case TerrainType.Desert: // Dunes
+                    if (cell.Height > 0.6f)       { ch = '▒'; fg = ConsoleColor.DarkYellow; } // High Dune
+                    else                          { ch = '░'; fg = ConsoleColor.DarkYellow; } // Low Sand
+                    break;
+
+                case TerrainType.Wetlands: // Swampy
+                    if (cell.Moisture > 0.8f)     { ch = '≈'; fg = ConsoleColor.DarkGreen; } // Bog
+                    else                          { ch = '░'; fg = ConsoleColor.DarkCyan; }  // Marsh
+                    break;
+
+                case TerrainType.Tundra: // Snow/Ice
+                    if (cell.Temperature < 0.1f)  { ch = '▓'; fg = ConsoleColor.Cyan; }      // Ice
+                    else                          { ch = '.'; fg = ConsoleColor.White; }     // Snow
+                    break;
+
+                case TerrainType.Plains: // Grass
+                default:
+                     // Add slight texture to grass so it isn't empty black space
+                     if (cell.Moisture > 0.5f)    { ch = '‚'; fg = ConsoleColor.DarkGreen; } // Healthy Grass
+                     else                         { ch = '.'; fg = ConsoleColor.DarkYellow; } // Dry Grass
+                    break;
             }
+
             return (ch, fg, bg);
         }
 

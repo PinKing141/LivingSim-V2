@@ -8,107 +8,127 @@ using LivingSim.Environment;
 using LivingSim.Generation;
 using LivingSim.Observation;
 using LivingSim.Visualisation;
-using LivingSim.Animals; 
+using LivingSim.Animals;
 
 class Program
 {
     static void Main()
     {
         // ----------------------------
-        // 1. Create core objects
+        // 1. Setup Simulation (Large Grid)
         // ----------------------------
         var random = new Random(12345);
         var clock = new SimulationClock();
-        var grid = new Grid(width: 30, height: 15); // A wider world for better viewing
+        var grid = new Grid(width: 500, height: 500);
+
         var environment = new EnvironmentTickSystem();
         var metrics = new MetricsCollector();
         var animals = new AnimalManager(grid.Width, grid.Height, random);
         var visualizer = new ConsoleVisualizer();
 
         // ----------------------------
-        // 2. Generate world
+        // 2. Camera Setup
+        // ----------------------------
+        int camX = 0, camY = 0;
+        int viewWidth = 60, viewHeight = 30;
+
+        // ----------------------------
+        // 3. Generate world
         // ----------------------------
         var generator = new WorldGenerator(random);
-        generator.Generate(grid, (g) => {
-            // UPDATED: Added 'false' for showTerritories parameter
-            visualizer.Draw(g, new List<Animal>(), clock, new List<Dictionary<Species, int>>(), false, false);
-        }, 20);
+        Console.WriteLine("Generating World...");
+        generator.Generate(grid, null, 0);
 
         // ----------------------------
-        // 3. Spawn some animals
+        // 4. Spawn animals (Clusters)
         // ----------------------------
-        // Spawn a small pack of wolves
-        for (int i = 0; i < 3; i++)
+        void SpawnCluster(AnimalType type, int count, int radius)
         {
-            animals.SpawnAnimal(AnimalType.Carnivore, random.Next(grid.Width), random.Next(grid.Height));
-        }
-        // Spawn a herd of herbivores
-        for (int i = 0; i < 12; i++) 
-        {
-            animals.SpawnAnimal(AnimalType.Herbivore, random.Next(grid.Width), random.Next(grid.Height));
-        }
-        // Spawn a group of omnivores
-        for (int i = 0; i < 8; i++) 
-        {
-            animals.SpawnAnimal(AnimalType.Omnivore, random.Next(grid.Width), random.Next(grid.Height));
+            int cx = random.Next(grid.Width);
+            int cy = random.Next(grid.Height);
+            for (int i = 0; i < count; i++) {
+                int x = Math.Clamp(cx + random.Next(-radius, radius), 0, grid.Width-1);
+                int y = Math.Clamp(cy + random.Next(-radius, radius), 0, grid.Height-1);
+                animals.SpawnAnimal(type, x, y);
+            }
         }
 
-        // ----------------------------
-        // 4. Create world manager
-        // ----------------------------
+        for(int i=0; i<15; i++) SpawnCluster(AnimalType.Carnivore, 4, 5); // Wolf Packs
+        for(int i=0; i<40; i++) SpawnCluster(AnimalType.Herbivore, 6, 10); // Deer Herds
+        for(int i=0; i<20; i++) SpawnCluster(AnimalType.Omnivore, 2, 5);   // Bear Families
+
         var manager = new WorldManager(clock, grid, environment, metrics, animals);
 
         // ----------------------------
-        // 5. Run simulation
+        // 5. Game Loop with TIME WARP
         // ----------------------------
-        int simulationDelay = 100;
+        int simulationDelay = 50;
         bool isPaused = false;
         bool showStats = false;
-        bool showTerritories = false; // <--- NEW FLAG
+        bool showTerritories = false;
+        bool isTimeWarp = false; // <--- NEW FLAG
 
         List<Dictionary<Species, int>> history = new List<Dictionary<Species, int>>();
         Console.CursorVisible = false;
 
-        // Increased duration to 5000 to allow time for civilizations to eventually emerge
-        for (int i = 0; i < 5000; ) 
+        while (true)
         {
             if (Console.KeyAvailable)
             {
                 var key = Console.ReadKey(true).Key;
-                if (key == ConsoleKey.UpArrow) simulationDelay = Math.Max(0, simulationDelay - 10);
-                if (key == ConsoleKey.DownArrow) simulationDelay += 10;
+                // Controls
+                if (key == ConsoleKey.LeftArrow)  camX = Math.Max(0, camX - 5);
+                if (key == ConsoleKey.RightArrow) camX = Math.Min(grid.Width - viewWidth, camX + 5);
+                if (key == ConsoleKey.UpArrow)    camY = Math.Max(0, camY - 5);
+                if (key == ConsoleKey.DownArrow)  camY = Math.Min(grid.Height - viewHeight, camY + 5);
                 if (key == ConsoleKey.Spacebar) isPaused = !isPaused;
                 if (key == ConsoleKey.S) showStats = !showStats;
-                if (key == ConsoleKey.T) showTerritories = !showTerritories; // <--- NEW CONTROL
+                if (key == ConsoleKey.T) showTerritories = !showTerritories;
+                if (key == ConsoleKey.Tab) isTimeWarp = !isTimeWarp; // TOGGLE WARP
+                if (key == ConsoleKey.OemPlus || key == ConsoleKey.Add) simulationDelay = Math.Max(0, simulationDelay - 10);
+                if (key == ConsoleKey.OemMinus || key == ConsoleKey.Subtract) simulationDelay += 10;
             }
 
-            // PASS THE NEW FLAG TO DRAW
-            visualizer.Draw(grid, animals.GetAnimals(), clock, history, showStats, showTerritories);
-            
-            Console.WriteLine($"Delay: {simulationDelay}ms | Space: Pause | S: Stats | T: Territories".PadRight(Console.WindowWidth > 0 ? Console.WindowWidth - 1 : 80));
-            
-            if (!isPaused)
+            if (isTimeWarp)
             {
+                // --- WARP MODE ---
+                // No Drawing, No Sleep. Just raw calculation.
                 manager.Tick();
 
-                // Record population history
-                var currentStats = animals.GetAnimals()
-                    .Where(a => a.IsAlive)
-                    .GroupBy(a => a.Species)
-                    .ToDictionary(g => g.Key, g => g.Count());
-                history.Add(currentStats);
-                if (history.Count > 60) history.RemoveAt(0); // Keep last 60 ticks (approx width of graph)
-
-                Thread.Sleep(simulationDelay);
-                i++;
+                // Draw a simple status bar occasionally so you know it's working
+                if (clock.CurrentTick % 50 == 0)
+                {
+                    Console.SetCursorPosition(0, 0);
+                    Console.ForegroundColor = ConsoleColor.Magenta;
+                    Console.WriteLine($"[TIME WARP ACTIVE] Year {clock.Year} | Day {clock.DayOfYear} | Tick {clock.CurrentTick}      ");
+                    Console.ResetColor();
+                }
             }
             else
             {
-                Thread.Sleep(100);
+                // --- NORMAL MODE ---
+                visualizer.Draw(grid, animals.GetAnimals(), clock, history, showStats, showTerritories, camX, camY, viewWidth, viewHeight);
+                Console.WriteLine($"Arrows: Cam | Tab: Time Warp | Space: Pause | T: Territory".PadRight(Console.WindowWidth - 1));
+
+                if (!isPaused)
+                {
+                    manager.Tick();
+
+                    // Update History
+                    var currentStats = animals.GetAnimals()
+                        .Where(a => a.IsAlive)
+                        .GroupBy(a => a.Species)
+                        .ToDictionary(g => g.Key, g => g.Count());
+                    history.Add(currentStats);
+                    if (history.Count > viewWidth) history.RemoveAt(0);
+
+                    Thread.Sleep(simulationDelay);
+                }
+                else
+                {
+                    Thread.Sleep(100);
+                }
             }
         }
-        Console.CursorVisible = true;
-
-        Console.WriteLine("Simulation complete.");
     }
 }
