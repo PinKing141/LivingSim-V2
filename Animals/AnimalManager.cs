@@ -14,6 +14,10 @@ namespace LivingSim.Animals
         private readonly int _height;
         private readonly Random _random;
 
+        private readonly ReproductionSystem _reproductionSystem;
+        private readonly CombatSystem _combatSystem;
+        private readonly MetabolismSystem _metabolismSystem;
+
         // Plague Settings
         private const int PlagueCheckInterval = 100; // Check every 100 ticks
         private const float PlagueThresholdRatio = 0.20f; // Species is overpopulated if > 20% of map area
@@ -25,13 +29,16 @@ namespace LivingSim.Animals
             _width = width;
             _height = height;
             _random = random;
+            _reproductionSystem = new ReproductionSystem(random);
+            _combatSystem = new CombatSystem();
+            _metabolismSystem = new MetabolismSystem();
         }
 
         public void SpawnAnimal(AnimalType type, int x, int y)
         {
             if (x < 0 || x >= _width || y < 0 || y >= _height)
                 return;
-            
+
             // Randomly assign a species based on the AnimalType
             Species species = type switch
             {
@@ -111,14 +118,14 @@ namespace LivingSim.Animals
                             .Where(g => g.Count() < Animal.MaxGroupSize) // Not full
                             .Select(g => new { Group = g, CenterX = g.Average(m => m.X), CenterY = g.Average(m => m.Y) }) // Pre-calculate center
                             .ToList();
-                        
+
                         if (potentialNewGroups.Any())
                         {
                             // Find the closest suitable group to join, based on the group's center.
                             var closestGroup = potentialNewGroups
                                 .OrderBy(g => Math.Pow(expellee.X - g.CenterX, 2) + Math.Pow(expellee.Y - g.CenterY, 2))
                                 .First();
-                            
+
                             var newGroup = closestGroup.Group;
                             expellee.JoinGroup(newGroup.Key);
                             expellee.SetDen(newGroup.First().DenX, newGroup.First().DenY);
@@ -137,47 +144,13 @@ namespace LivingSim.Animals
                 .GroupBy(a => (a.X, a.Y))
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            var aggressiveAnimals = animalsThisTick.Where(a => a.IsAlive && a.Type != AnimalType.Herbivore);
-            foreach (var animal in aggressiveAnimals)
-            {
-                if (allAnimalLocations.TryGetValue((animal.X, animal.Y), out var cellMates) && cellMates.Count > 1)
-                {
-                    animal.Hunt(cellMates, grid);
-                }
-            }
+            _combatSystem.ProcessHunting(animalsThisTick, allAnimalLocations, grid);
 
             // 4. All animals eat (plants), age, and metabolize.
-            foreach (var animal in animalsThisTick)
-            {
-                if (animal.IsAlive) // Animal might have been killed in step 3
-                {
-                    allAnimalLocations.TryGetValue((animal.X, animal.Y), out var cellMates);
-                    animal.EatAndAge(grid.GetCell(animal.X, animal.Y), cellMates ?? new List<Animal>(), grid, currentTick);
-                }
-            }
+            _metabolismSystem.ProcessMetabolism(animalsThisTick, allAnimalLocations, grid, currentTick);
 
             // 5. Animals reproduce if conditions are met.
-            var newborns = new List<Animal>();
-            foreach (var animal in animalsThisTick)
-            {
-                // Density Check: Count same-species neighbors in 3x3 area
-                int nearbySameSpecies = 0;
-                for (int dx = -1; dx <= 1; dx++)
-                {
-                    for (int dy = -1; dy <= 1; dy++)
-                    {
-                        if (allAnimalLocations.TryGetValue((animal.X + dx, animal.Y + dy), out var neighbors))
-                        {
-                            nearbySameSpecies += neighbors.Count(n => n.Species == animal.Species && n.IsAlive);
-                        }
-                    }
-                }
-
-                if (!animal.IsCrowded(nearbySameSpecies) && animal.IsReadyToReproduce() && _random.NextDouble() < (Animal.BaseReproductionChance * animal.Fertility))
-                {
-                    newborns.AddRange(animal.CreateOffspring(_random)); // Add all new offspring
-                }
-            }
+            var newborns = _reproductionSystem.ProcessReproduction(animalsThisTick, allAnimalLocations);
 
             // Add newborns to the main list. They will start their lifecycle in the next tick.
             _animals.AddRange(newborns);
@@ -208,7 +181,7 @@ namespace LivingSim.Animals
             var speciesCounts = _animals.Where(a => a.IsAlive)
                                         .GroupBy(a => a.Species)
                                         .ToDictionary(g => g.Key, g => g.Count());
-            
+
             int mapArea = _width * _height;
 
             foreach (var kvp in speciesCounts)
@@ -240,7 +213,7 @@ namespace LivingSim.Animals
             foreach (var victim in victims)
             {
                 // Disease strikes!
-                victim.TakeDamage(victim.MaxHealth * 2, null); 
+                victim.TakeDamage(victim.MaxHealth * 2, null);
             }
         }
     }

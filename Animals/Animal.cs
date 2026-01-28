@@ -15,7 +15,7 @@ namespace LivingSim.Animals
         public int X { get; private set; }
         public int Y { get; private set; }
 
-        private const float BaseMaxHunger = 10f;
+        private const float BaseMaxHunger = 20f;
         private const float BaseMaxThirst = 10f;
         private const float BaseMaxHealth = 10f;
 
@@ -54,6 +54,7 @@ namespace LivingSim.Animals
         private const int MemoryDurationTicks = 10;
         private bool _seekingWater = false;
         private int _ticksSinceLastAge = 0;
+        private (int dx, int dy) _lastMoveDirection = (0, 0);
 
         // --- Stamina ---
         public float Stamina { get; private set; }
@@ -749,12 +750,28 @@ namespace LivingSim.Animals
                     double length = Math.Sqrt(totalDx * totalDx + totalDy * totalDy);
                     totalDx /= (float)length;
                     totalDy /= (float)length;
+
+                    // Add hysteresis: 10% bonus to continue in last direction
+                    if (_lastMoveDirection.dx != 0 || _lastMoveDirection.dy != 0) {
+                        float dotProduct = totalDx * _lastMoveDirection.dx + totalDy * _lastMoveDirection.dy;
+                        if (dotProduct > 0) { // Same direction
+                            totalDx *= 1.1f;
+                            totalDy *= 1.1f;
+                            // Renormalize
+                            length = Math.Sqrt(totalDx * totalDx + totalDy * totalDy);
+                            totalDx /= (float)length;
+                            totalDy /= (float)length;
+                        }
+                    }
                 }
 
                 int moveSpeed = (Stamina > 0) ? Speed : 1;
                 int newX = Math.Clamp(X + (int)(totalDx * moveSpeed), 0, grid.Width - 1);
                 int newY = Math.Clamp(Y + (int)(totalDy * moveSpeed), 0, grid.Height - 1);
                 TryMoveTo(newX, newY, grid, currentTick, moveSpeed, currentWeather);
+
+                // Update last move direction
+                _lastMoveDirection = ((int)(totalDx * moveSpeed), (int)(totalDy * moveSpeed));
             }
         }
 
@@ -860,10 +877,14 @@ namespace LivingSim.Animals
             if (prey.Any())
             {
                 var target = prey.OrderBy(p => (X - p.X) * (X - p.X) + (Y - p.Y) * (Y - p.Y)).First();
-                target.TakeDamage(this.Aggression * this.Size, this);
-                if (!target.IsAlive)
+                // Hunt failure chance: 50% chance even if conditions met
+                if (_random.NextDouble() < 0.5)
                 {
-                    // Maybe move to the carcass or something, but for now, just eat later
+                    target.TakeDamage(this.Aggression * this.Size, this);
+                    if (!target.IsAlive)
+                    {
+                        // Maybe move to the carcass or something, but for now, just eat later
+                    }
                 }
             }
         }

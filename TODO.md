@@ -1,9 +1,19 @@
-# TODO: Fix Compilation Errors
+# Simulation Fixes & Polish TODO
 
-## Animal.cs
-- [x] Complete PerformGoalSeekingMove method (fix incomplete if statement)
-- [x] Add missing methods: Eat, Die, FindAdjacentWater, FindClosest, IsInVision, JoinGroup, SetDen, LeaveGroup, Hunt, IsCrowded, IsReadyToReproduce, CreateOffspring, DecayCarcass, TakeDamage
-- [x] Close the #endregion
+## Critical Logic Fixes
+- [x] Fix food regrowth with cellular automata (EnvironmentTickSystem.cs)
+- [x] Add movement hysteresis to prevent ping-pong (Animal.cs)
+- [x] Add hunt failure chance for predators (Animal.cs)
+- [x] Stricter reproduction checks (AnimalManager.cs)
+- [x] Adjust metabolism rates for 120-day year (Animal.cs)
 
-## EnvironmentTickSystem.cs
-- [x] Fix null reference dereferences at lines 83, 108, 122 by adding null checks for cell
+## Performance & Code Quality
+- [x] Create SimConfig class for magic numbers (Config/SimConfig.cs)
+- [x] Extract ReproductionSystem (Animals/ReproductionSystem.cs)
+- [x] Extract CombatSystem (Animals/CombatSystem.cs)
+- [x] Extract MetabolismSystem (Animals/MetabolismSystem.cs)
+- [x] Move magic numbers to SimConfig
+
+## Minor Bugs
+- [x] Fix console flicker (ConsoleVisualizer.cs)
+- [x] Fix visual glitch on map edges (ConsoleVisualizer.cs)

@@ -89,10 +89,34 @@ namespace LivingSim.Environment
                         cell.Scents.RemoveAll(s => s.Strength <= 0);
                     }
                     
-                    // Simple Regrowth (Grass/Food)
+                    // Cellular Automata Regrowth (Grass/Food)
                     if (cell.Resource == ResourceType.None && cell.Terrain == TerrainType.Plains)
                     {
-                         if (_random.NextDouble() < 0.001) cell.Resource = ResourceType.BerryBush;
+                        // Check neighbors for existing resources
+                        bool hasNeighborResource = false;
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            for (int dy = -1; dy <= 1; dy++)
+                            {
+                                if (dx == 0 && dy == 0) continue;
+                                int nx = x + dx;
+                                int ny = y + dy;
+                                if (nx >= 0 && nx < grid.Width && ny >= 0 && ny < grid.Height)
+                                {
+                                    var neighbor = grid.GetCell(nx, ny);
+                                    if (neighbor.Resource == ResourceType.BerryBush)
+                                    {
+                                        hasNeighborResource = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (hasNeighborResource) break;
+                        }
+
+                        // 5% chance to grow if neighbor has resource, 0.1% base chance
+                        double growthChance = hasNeighborResource ? 0.05 : 0.001;
+                        if (_random.NextDouble() < growthChance) cell.Resource = ResourceType.BerryBush;
                     }
                 }
             }
@@ -100,7 +124,8 @@ namespace LivingSim.Environment
 
         private void ReplenishWater(Grid grid)
         {
-            for (int i = 0; i < 20; i++)
+            int replenishCount = (int)(grid.Width * grid.Height * 0.01); // 1% of total tiles
+            for (int i = 0; i < replenishCount; i++)
             {
                 int x = _random.Next(grid.Width);
                 int y = _random.Next(grid.Height);

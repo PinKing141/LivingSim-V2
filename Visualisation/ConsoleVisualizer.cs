@@ -15,6 +15,8 @@ namespace LivingSim.Visualisation
         // UPDATED: Now accepts Camera coordinates and Viewport size
         public void Draw(Grid grid, IReadOnlyList<Animal> animals, SimulationClock clock, List<Dictionary<Species, int>> history, bool showStats, bool showTerritories, int camX, int camY, int viewWidth, int viewHeight)
         {
+            // Fix console flicker: Only clear and reset cursor when necessary
+            Console.CursorVisible = false;
             Console.SetCursorPosition(0, 0);
 
             // Resize buffer if the *Viewport* size changes (not the grid size)
